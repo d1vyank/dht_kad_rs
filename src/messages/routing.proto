@@ -1,0 +1,41 @@
+syntax = "proto3";
+package routing.pb;
+
+
+message Message {
+	enum MessageType {
+		STORE = 0;
+		FIND_VALUE = 1;
+		FIND_NODE = 2;
+		PING = 3;
+	}
+
+	enum ErrorCode {
+		OK = 0;
+		INTERNAL_ERROR = 1;
+		NOT_FOUND = 2;
+		BAD_REQUEST = 3;
+	}
+
+	message Peer {
+		// ID of a given peer.
+		bytes id = 1;
+
+		// address for a given peer
+		bytes addrs = 2;
+	}
+
+	// defines what type of message it is.
+	MessageType type = 1;
+
+	// Used to specify the key associated with this message.
+	bytes key = 2;
+
+	bytes value = 3;
+
+	repeated Peer closerPeers = 4;
+
+	Peer myself = 5;
+
+	ErrorCode code = 6;
+}

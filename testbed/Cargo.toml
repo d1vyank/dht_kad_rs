@@ -1,0 +1,21 @@
+[package]
+name = "testbed"
+version = "0.1.0"
+authors = ["divyank"]
+edition = "2018"
+
+[dependencies]
+log = "0.4"
+color-backtrace = { version = "0.1" }
+pretty_env_logger = "0.3"
+clap = "2.0"
+futures-preview = { version = "0.3.0-alpha.13", features = ["compat"] }
+tokio = { version = "0.1", features = ["async-await-preview"] }
+tokio-async-await = "0.1.6"
+tarpc = {git= "https://github.com/tikue/tarpc", features = ["serde1"], branch= "fix-cancel-panic"}
+dht_kad_rs = {version = "0.1", path= "../"}
+rand = "0.6.5"
+
+[[bin]]
+name = "testbed"
+path = "src/main.rs"
