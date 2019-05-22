@@ -1,0 +1,8 @@
+language: rust
+rust:
+  - nightly-2019-03-13
+matrix:
+  fast_finish: true
+cache: cargo
+script:
+  - cargo test --verbose --all
