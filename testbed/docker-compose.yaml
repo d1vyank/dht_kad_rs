@@ -3,11 +3,10 @@ services:
   bootstrap-dht:
     image: dht_kad_rs:latest
     environment:
-      - RUST_LOG=dht=info
-      - RUST_LOG=testbed=info
-      #- RUST_LOG=tarpc=trace
-      #- RUST_BACKTRACE=1
-      #- RUST_BACKTRACE=full
+      - RUST_LOG=testbed,dht=info
+      # - RUST_LOG=tarpc=trace
+      # - RUST_BACKTRACE=1
+      # - RUST_BACKTRACE=full
     ports:
       - "1234:1234"
     command: ./target/debug/testbed --address bootstrap-dht:1234 -n 69494086256441019971893887933186321414
@@ -17,13 +16,10 @@ services:
   dht:
     image: dht_kad_rs:latest
     environment:
-      - RUST_LOG=dht=info
-      - RUST_LOG=testbed=info
+      - RUST_LOG=testbed,dht=info
       #- RUST_LOG=tarpc=trace
       #- RUST_BACKTRACE=1
       #- RUST_BACKTRACE=full
     depends_on:
       - bootstrap-dht
     command: ./target/debug/testbed --address dht:1235  -i 69494086256441019971893887933186321414 -b bootstrap-dht:1234
-    # expose:
-    #   - "1235"

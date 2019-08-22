@@ -8,16 +8,12 @@ edition = "2018"
 log = "0.4"
 color-backtrace = { version = "0.1" }
 pretty_env_logger = "0.3"
-#bincode-transport = { package = "tarpc-bincode-transport", version = "0.4"}
-bincode-transport = {package = "tarpc-bincode-transport", git= "https://github.com/tikue/tarpc", branch= "fix-cancel-panic"}
+tarpc-bincode-transport = {git= "https://github.com/google/tarpc", branch="master"}
 clap = "2.0"
-futures-preview = { version = "0.3.0-alpha.13", features = ["compat"] }
-serde = { version = "1.0.11" }
-#tarpc = { version = "0.15.0", features = ["serde1"] }
-tarpc = {git= "https://github.com/tikue/tarpc", features = ["serde1"], branch= "fix-cancel-panic"}
-tokio = { version = "0.1", features = ["async-await-preview"] }
-tokio-executor = "0.1"
-tokio-async-await = "0.1.6"
+futures-preview = { version = "0.3.0-alpha.18" }
+serde = { version = "1.0", features = ["derive"] }
+tarpc = {git= "https://github.com/google/tarpc", branch="master" , features = ["serde1"]}
+tokio = { version = "0.2.0-alpha.2" }
 rand = "0.6.5"
 protobuf = {git= "https://github.com/stepancheg/rust-protobuf", features= ["with-serde"]}
 fasthash = "0.4.0"

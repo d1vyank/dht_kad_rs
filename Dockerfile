@@ -1,6 +1,6 @@
 # Cached rust builds with docker by: http://whitfin.io/speeding-up-rust-docker-builds/
 
-FROM d1vyank/rust:nightly-2019-03-20
+FROM rustlang/rust:nightly
 
 # create a new empty shell project
 RUN USER=root cargo new --lib dht_kad_rs

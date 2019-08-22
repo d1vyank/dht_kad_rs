@@ -1,16 +1,17 @@
 #![feature(
-    futures_api,
     arbitrary_self_types,
-    await_macro,
     async_await,
+    async_closure,
+    custom_attribute,
     proc_macro_hygiene,
     vec_remove_item,
-    existential_type
+    type_alias_impl_trait
 )]
 #![allow(dead_code)]
 
 use crate::kvstore::KVStore;
 use crate::messages::routing;
+use crate::rpc::dht::Service;
 
 use futures::future::join_all;
 use futures::lock::Mutex;
@@ -19,7 +20,7 @@ use log::{error, info, warn};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::{error, fmt, io};
-use tarpc::server::{Handler, Server};
+use tarpc::server::{self, Handler};
 
 pub mod buckets;
 mod client;
@@ -85,27 +86,32 @@ impl DHTService {
     pub async fn init(&self) -> io::Result<()> {
         let rt = self.routing_table.clone();
         let kvstore = self.kvstore.clone();
+        let address = self.conf.address.clone();
 
-        tokio::spawn(
-            run_server(kvstore, rt, self.conf.address)
-                .map_err(|e| error!("Error running server {}", e))
-                .boxed()
-                .compat(),
-        );
+        tokio::spawn(async move {
+            let transport = tarpc_bincode_transport::listen(&address)
+                .unwrap()
+                .filter_map(|r| future::ready(r.ok()));
 
-        await!(self.bootstrap())
+            server::new(server::Config::default())
+                .incoming(transport)
+                .respond_with(rpc::DHTServer::new(kvstore, rt).serve())
+                .await;
+        });
+
+        self.bootstrap().await
     }
 
     /// get the value corresponding to the given key from the DHT
     pub async fn get(&self, key: Vec<u8>) -> Result<Vec<u8>, RPCError> {
         let hashed_key = keyutil::calculate_hash(key);
-        await!(self.dht_client.find_value(hashed_key))
+        self.dht_client.find_value(hashed_key).await
     }
 
     pub async fn put(&self, key: Vec<u8>, value: Vec<u8>) -> Result<(), RPCError> {
         // TODO: keep local map of 'my' keys for republishing -- consider ttl cache crate
         let hashed_key = keyutil::calculate_hash(key);
-        await!(self.dht_client.store(hashed_key, value))
+        self.dht_client.store(hashed_key, value).await
     }
 
     async fn republish() {
@@ -129,8 +135,8 @@ impl DHTService {
             introductions.push(self.dht_client.find_node(address, self.local.id));
         }
 
-        let results = await!(join_all(introductions));
-        let mut rt = await!(self.routing_table.lock());
+        let results = join_all(introductions).await;
+        let mut rt = self.routing_table.lock().await;
 
         for (i, result) in results.iter().enumerate() {
             match result {
@@ -167,27 +173,7 @@ impl fmt::Display for RPCError {
 }
 
 impl error::Error for RPCError {
-    fn description(&self) -> &str {
-        "RPC error"
-    }
-
-    fn cause(&self) -> Option<&error::Error> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         None
     }
-}
-
-async fn run_server(
-    kvstore: Arc<Mutex<kvstore::MemoryStore>>,
-    rt: Arc<Mutex<buckets::RoutingTable>>,
-    server_addr: SocketAddr,
-) -> io::Result<()> {
-    let transport = bincode_transport::listen(&server_addr.clone())?;
-
-    let server = Server::default()
-        .incoming(transport)
-        .respond_with(rpc::serve(rpc::DHTServer::new(kvstore, rt)));
-
-    await!(server);
-
-    Ok(())
 }

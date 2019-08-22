@@ -10,10 +10,15 @@ use std::str;
 use std::sync::Arc;
 use tarpc::context;
 
-tarpc::service! {
-    rpc store(message: routing::Message) -> routing::Message;
-    rpc find_node(message: routing::Message) -> routing::Message;
-    rpc find_value(message: routing::Message) -> routing::Message;
+pub mod dht {
+    use crate::messages::routing;
+
+    #[tarpc::service]
+    pub trait Service {
+        async fn store(message: routing::Message) -> routing::Message;
+        async fn find_node(message: routing::Message) -> routing::Message;
+        async fn find_value(message: routing::Message) -> routing::Message;
+    }
 }
 
 #[derive(Clone)]
@@ -34,17 +39,16 @@ impl DHTServer {
     }
 }
 
-impl Service for DHTServer {
-    existential type StoreFut: Future<Output = routing::Message>;
-    existential type FindNodeFut: Future<Output = routing::Message>;
-    existential type FindValueFut: Future<Output = routing::Message>;
+impl dht::Service for DHTServer {
+    type StoreFut = impl Future<Output = routing::Message>;
+    type FindNodeFut = impl Future<Output = routing::Message>;
+    type FindValueFut = impl Future<Output = routing::Message>;
 
     fn store(self, _: context::Context, message: routing::Message) -> Self::StoreFut {
         self.store_async(message)
     }
 
     fn find_node(self, _: context::Context, message: routing::Message) -> Self::FindNodeFut {
-        //let x = self.find_nodes(message.key);
         self.find_node_async(message)
     }
 
@@ -60,11 +64,11 @@ impl DHTServer {
         }
 
         update_routing_table(
-            &mut await!(self.routing_table.lock()),
+            &mut self.routing_table.lock().await,
             &message.myself.unwrap(),
         );
 
-        let mut kvstore = await!(self.kvstore.lock());
+        let mut kvstore = self.kvstore.lock().await;
         match kvstore.put(message.key, message.value) {
             Ok(()) => msgutil::create_store_response(true),
             Err(e) => {
@@ -79,7 +83,7 @@ impl DHTServer {
             return msgutil::create_invalid_response();
         }
 
-        let mut routing_table = await!(self.routing_table.lock());
+        let mut routing_table = self.routing_table.lock().await;
         update_routing_table(&mut routing_table, &message.myself.unwrap());
         msgutil::create_find_node_response(
             routing_table.k_nearest_peers(keyutil::key_from_bytes(&message.key)),
@@ -92,11 +96,11 @@ impl DHTServer {
         }
 
         update_routing_table(
-            &mut await!(self.routing_table.lock()),
+            &mut self.routing_table.lock().await,
             &message.clone().myself.unwrap(),
         );
 
-        match await!(self.kvstore.lock()).get(message.key.clone()) {
+        match self.kvstore.lock().await.get(message.key.clone()) {
             Ok(value) => {
                 if value.is_some() {
                     return msgutil::create_find_value_response(
@@ -111,7 +115,7 @@ impl DHTServer {
         }
 
         // If value not found or error, compute and return 'find node' response
-        await!(self.find_node_async(message))
+        self.find_node_async(message).await
     }
 }
 

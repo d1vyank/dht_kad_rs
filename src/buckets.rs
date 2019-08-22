@@ -168,11 +168,7 @@ impl fmt::Display for NoCapacityError {
 }
 
 impl error::Error for NoCapacityError {
-    fn description(&self) -> &str {
-        "bucket capacity reached"
-    }
-
-    fn cause(&self) -> Option<&error::Error> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         None
     }
 }
@@ -244,7 +240,6 @@ mod tests {
         assert!(r.buckets[2].peers.contains(&p1));
         assert!(r.buckets[1].peers.contains(&p2));
     }
-
 }
 
 #[cfg(test)]

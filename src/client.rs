@@ -1,17 +1,17 @@
+use super::RPCError;
 use crate::buckets;
 use crate::keyutil;
 use crate::kvstore;
 use crate::kvstore::KVStore;
 use crate::messages::{msgutil, routing};
 use crate::rpc;
-use super::RPCError;
 
 use futures::lock::Mutex;
 use futures::{channel::mpsc, prelude::*};
 use log::{error, info, trace};
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::io;
 use tarpc::{client, context};
 
 // Issues RPCs to other DHT nodes
@@ -50,14 +50,14 @@ impl DHTClient {
             message: "".to_string(),
         };
 
-        let peers = await!(self.nearest_peers(key));
+        let peers = self.nearest_peers(key).await;
         let num_reqs = peers.len();
 
         for peer in peers {
             v.push(store_value(peer.address.parse().unwrap(), request.clone()))
         }
 
-        for r in await!(future::join_all(v)) {
+        for r in future::join_all(v).await {
             let validation_result = msgutil::validate_store_result(r);
             if validation_result.is_err() {
                 failures = failures + 1;
@@ -75,23 +75,25 @@ impl DHTClient {
 
     /// Issues a 'find node' RPC to the given address
     pub async fn find_node(&self, addr: SocketAddr, target: u128) -> io::Result<routing::Message> {
-        let transport = await!(bincode_transport::connect(&addr))?;
-        let mut client = await!(rpc::new_stub(client::Config::default(), transport))?;
-        await!(client.find_node(
-            context::current(),
-            msgutil::create_find_node_request(target, self.myself.clone())
-        ))
+        let conn = tarpc_bincode_transport::connect(&addr).await?;
+        let mut client = rpc::dht::ServiceClient::new(client::Config::default(), conn).spawn()?;
+        client
+            .find_node(
+                context::current(),
+                msgutil::create_find_node_request(target, self.myself.clone()),
+            )
+            .await
     }
 
     /// Iteratively queries 'alpha' nodes concurrently until value is found or we run out of candidates
     pub async fn find_value(&self, key: u128) -> Result<Vec<u8>, RPCError> {
         // look for value in local kv store
-        match await!(self.find_value_local(key)) {
+        match self.find_value_local(key).await {
             Some(v) => return Ok(v),
             None => (),
         }
 
-        let mut candidates = await!(self.nearest_peers(key));
+        let mut candidates = self.nearest_peers(key).await;
         let mut queried = Vec::new();
         let mut in_progress: u16 = 0;
         let (tx, mut rx) = mpsc::unbounded();
@@ -113,7 +115,7 @@ impl DHTClient {
             }
 
             // await and handle responses from spawned queries
-            match await!(rx.next()) {
+            match rx.next().await {
                 Some(result) => {
                     in_progress = in_progress - 1;
                     if result.is_err() {
@@ -153,11 +155,11 @@ impl DHTClient {
     }
 
     async fn nearest_peers(&self, key: u128) -> Vec<buckets::Peer> {
-        await!(self.routing_table.lock()).k_nearest_peers(key)
+        self.routing_table.lock().await.k_nearest_peers(key)
     }
 
     async fn find_value_local(&self, key: u128) -> Option<Vec<u8>> {
-        match await!(self.kvstore.lock()).get(keyutil::key_to_bytes(key)) {
+        match self.kvstore.lock().await.get(keyutil::key_to_bytes(key)) {
             Ok(v) => return v.clone(),
             Err(e) => {
                 error!("could not read from kvstore {:?}", e);
@@ -174,48 +176,51 @@ fn spawn_query(
     mut tx: mpsc::UnboundedSender<io::Result<routing::Message>>,
 ) {
     let mut tx_error = tx.clone();
-    tokio::spawn(
-        find_value(peer.address.parse().unwrap(), request.clone())
-            .map_ok(move |response| match tx.unbounded_send(Ok(response)) {
-                Err(_e) => (), // Sends fail when reciever is out of scope i.e. the caller has returned. Okay to ignore.
-                Ok(()) => tx.disconnect(),
-            })
-            .map_err(move |err| match tx_error.unbounded_send(Err(err)) {
-                Err(_e) => (), // Sends fail when reciever is out of scope i.e. the caller has returned. Okay to ignore.
-                Ok(()) => tx_error.disconnect(),
-            })
-            .boxed()
-            .compat(),
-    );
+    tokio::spawn(async move {
+        match find_value(peer.address.parse().unwrap(), request.clone()).await {
+            Ok(response) => {
+                match tx.unbounded_send(Ok(response)) {
+                    Err(_e) => (), // Sends fail when reciever is out of scope i.e. the caller has returned. Okay to ignore.
+                    Ok(()) => tx.disconnect(),
+                }
+            }
+            Err(err) => {
+                match tx_error.unbounded_send(Err(err)) {
+                    Err(_e) => (), // Sends fail when reciever is out of scope i.e. the caller has returned. Okay to ignore.
+                    Ok(()) => tx_error.disconnect(),
+                }
+            }
+        }
+    });
 }
 
 async fn store_value(addr: SocketAddr, msg: routing::Message) -> io::Result<routing::Message> {
     trace!("Issuing store_value RPC to peer {:}", addr.to_string());
 
-    let transport = await!(bincode_transport::connect(&addr))?;
-    let mut client = await!(rpc::new_stub(client::Config::default(), transport))?;
-    await!(client.store(context::current(), msg))
+    let conn = tarpc_bincode_transport::connect(&addr).await?;
+    let mut client = rpc::dht::ServiceClient::new(client::Config::default(), conn).spawn()?;
+    client.store(context::current(), msg).await
 }
 
 async fn find_value(addr: SocketAddr, msg: routing::Message) -> io::Result<routing::Message> {
     trace!("Issuing find_value RPC to peer {:}", addr.to_string());
 
-    let transport = await!(bincode_transport::connect(&addr))?;
-    let mut client = await!(rpc::new_stub(client::Config::default(), transport))?;
-    await!(client.find_value(context::current(), msg))
+    let conn = tarpc_bincode_transport::connect(&addr).await?;
+    let mut client = rpc::dht::ServiceClient::new(client::Config::default(), conn).spawn()?;
+    client.find_value(context::current(), msg).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::compat::Executor01CompatExt;
     use futures::executor;
     use futures::future::Ready;
     use std::sync::Mutex as sync_mutex;
-    use tarpc::server::{Handler, Server};
+    use tarpc::server::{self, Handler};
     use tokio::runtime::Runtime;
 
     use crate::kvstore::KVStore;
+    use crate::rpc::dht::Service;
 
     #[test]
     fn test_store() {
@@ -223,9 +228,10 @@ mod tests {
         let value = vec![1, 2, 3];
         let routing_table = mock_routing_table();
         let mut rt = executor::block_on(routing_table.lock());
-        let mut runtime = Runtime::new().unwrap();
+        let runtime = Runtime::new().unwrap();
+        let client_runtime = Runtime::new().unwrap();
 
-        let servers = run_n_servers(5, &mut runtime);
+        let servers = run_n_servers(5, &runtime);
 
         for server in servers.iter() {
             // ignore bucket capacity reached error
@@ -237,22 +243,13 @@ mod tests {
 
         drop(rt);
 
-        tarpc::init(tokio::executor::DefaultExecutor::current().compat());
+        client_runtime.block_on(async {
+            let key = 123;
+            let value = vec![1, 2, 3];
+            let dht_client = DHTClient::new(5, mock_local_peer(), mock_kv_store(), routing_table);
 
-        tokio::run(
-            async {
-                let key = 123;
-                let value = vec![1, 2, 3];
-                let dht_client =
-                    DHTClient::new(5, mock_local_peer(), mock_kv_store(), routing_table);
-
-                await!(dht_client.store(key, value.clone())).unwrap();
-                Ok(())
-            }
-                .map_err(|e: io::Error| eprintln!("Error {}", e))
-                .boxed()
-                .compat(),
-        );
+            dht_client.store(key, value.clone()).await.unwrap();
+        });
 
         // Assert each server received correct request
         for server in servers.iter() {
@@ -264,15 +261,13 @@ mod tests {
 
     #[test]
     fn test_retrieve() {
-        let _ = pretty_env_logger::try_init_timed();
-        color_backtrace::install();
-
         let key = 123;
         let routing_table = mock_routing_table();
         let mut rt = executor::block_on(routing_table.lock());
-        let mut runtime = Runtime::new().unwrap();
+        let runtime = Runtime::new().unwrap();
+        let client_runtime = Runtime::new().unwrap();
 
-        let mut servers = run_n_servers(5, &mut runtime);
+        let mut servers = run_n_servers(5, &runtime);
 
         for server in servers.iter_mut() {
             let _e = rt.update(buckets::Peer {
@@ -283,20 +278,12 @@ mod tests {
 
         drop(rt);
 
-        tarpc::init(tokio::executor::DefaultExecutor::current().compat());
-        tokio::run(
-            async {
-                let key = 123;
-                let dht_client =
-                    DHTClient::new(5, mock_local_peer(), mock_kv_store(), routing_table);
+        client_runtime.block_on(async {
+            let key = 123;
+            let dht_client = DHTClient::new(5, mock_local_peer(), mock_kv_store(), routing_table);
 
-                await!(dht_client.find_value(key)).unwrap();
-                Ok(())
-            }
-                .map_err(|e: io::Error| eprintln!("Error {}", e))
-                .boxed()
-                .compat(),
-        );
+            dht_client.find_value(key).await.unwrap();
+        });
 
         // Assert each server received correct request
         for server in servers.iter() {
@@ -305,43 +292,24 @@ mod tests {
         }
     }
 
-    fn run_n_servers(n: u16, rt: &mut Runtime) -> Vec<MockDHTServer> {
+    fn run_n_servers(n: u16, rt: &Runtime) -> Vec<MockDHTServer> {
         let mut servers = vec![];
 
         for _i in 0..n {
             let address = "127.0.0.1:0".to_string();
-            let transport = bincode_transport::listen(&address.parse().unwrap()).unwrap();
+            let transport = tarpc_bincode_transport::listen(&address.parse().unwrap()).unwrap();
             let mock_server = MockDHTServer::new(transport.local_addr().to_string());
             servers.push(mock_server.clone());
 
             trace!("running a server at {:?}", mock_server.address);
-            rt.spawn(
-                async move {
-                    let server = Server::default()
-                        .incoming(transport)
-                        .respond_with(rpc::serve(mock_server));
+            let server = server::new(server::Config::default())
+                .incoming(transport.filter_map(|r| future::ready(r.ok())))
+                .respond_with(mock_server.serve());
 
-                    await!(server);
-                    Ok(())
-                }
-                    .map_err(|e: io::Error| error!("Error running server {}", e))
-                    .boxed()
-                    .compat(),
-            );
+            rt.spawn(server);
         }
 
         servers
-    }
-
-    async fn spawn_server(address: String, mock_server: MockDHTServer) -> io::Result<()> {
-        let transport = bincode_transport::listen(&address.parse().unwrap()).unwrap();
-
-        let server = Server::default()
-            .incoming(transport)
-            .respond_with(rpc::serve(mock_server.clone()));
-
-        await!(server);
-        Ok(())
     }
 
     fn mock_local_peer() -> buckets::Peer {
@@ -379,7 +347,7 @@ mod tests {
         }
     }
 
-    impl rpc::Service for MockDHTServer {
+    impl rpc::dht::Service for MockDHTServer {
         type StoreFut = Ready<routing::Message>;
         type FindNodeFut = Ready<routing::Message>;
         type FindValueFut = Ready<routing::Message>;

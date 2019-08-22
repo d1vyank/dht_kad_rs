@@ -6,10 +6,11 @@ An implementation of the Kademlia DHT protocol in Rust.
 
 ## Install
 
-NOTE: This library is currently only compatible with the Rust nightly version as it relies on async-await syntax which is not yet stable. Builds are pinned to version `nightly-2019-03-13`
-
+NOTE: This library is currently only compatible with the Rust nightly version as it relies on async-await syntax which is not yet stable.
 ```
-$cargo build
+$ cargo --version
+cargo 1.38.0-nightly (e853aa976 2019-08-09)
+$ cargo build
 ```
 
 ## Usage
@@ -26,9 +27,9 @@ async fn dht_example() {
       id: id,
   });
 
-  await!(s.init()).unwrap();
-  await!(s.put(key, value))?;
-  await!(s.get(key))?;
+  s.init().await.unwrap();
+  s.put(key, value).await?;
+  s.get(key).await?;
 }
 ```
 

@@ -12,11 +12,7 @@ impl fmt::Display for DatastoreError {
 }
 
 impl error::Error for DatastoreError {
-    fn description(&self) -> &str {
-        "data store error"
-    }
-
-    fn cause(&self) -> Option<&error::Error> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         None
     }
 }

@@ -1,23 +1,15 @@
-#![feature(
-    futures_api,
-    arbitrary_self_types,
-    await_macro,
-    async_await,
-    proc_macro_hygiene,
-    vec_remove_item,
-    existential_type
-)]
+#![feature(arbitrary_self_types, async_await, proc_macro_hygiene, vec_remove_item)]
 #![allow(dead_code)]
 
 use clap::{App, Arg};
 use dht::{self, buckets, keyutil};
-use futures::{compat::Executor01CompatExt, prelude::*};
-use log::info;
+use log::{info, trace};
 use pretty_env_logger;
+use rand::Rng;
 use std::net::ToSocketAddrs;
 use std::time::{Duration, Instant};
+use tokio::runtime::Runtime;
 use tokio::timer::Delay;
-use tokio_async_await::compat::forward::IntoAwaitable;
 
 fn main() {
     pretty_env_logger::init_timed();
@@ -65,7 +57,7 @@ fn main() {
                 .long("test-iterations")
                 .value_name("INTEGER")
                 .help("Number of test iterations(puts and gets) to execute")
-                .default_value("150"),
+                .default_value("10"),
         )
         .get_matches();
 
@@ -129,52 +121,38 @@ fn main() {
         address, id
     );
 
-    tarpc::init(tokio::executor::DefaultExecutor::current().compat());
-
     info!("Running testbed with {:} iterations", iterations);
-    tokio::run(
-        run_testbed(s, iterations)
-            .map_err(|e| panic!("Error {}", e))
-            .boxed()
-            .compat(),
-    );
+    let r = Runtime::new().unwrap();
+    r.block_on(run_testbed(s, iterations));
 }
 
-async fn run_testbed(s: dht::DHTService, iterations: usize) -> Result<(), dht::RPCError> {
-    await!(s.init()).unwrap();
+async fn run_testbed(s: dht::DHTService, iterations: usize) {
+    trace!("initializing DHT");
+    s.init().await.unwrap();
 
     // wait for bootstrap
     let when = Instant::now() + Duration::from_millis(5000);
-    await!(Delay::new(when).into_awaitable()).unwrap();
+    Delay::new(when).await;
 
-    let mut test_data: Vec<(Vec<u8>, Vec<u8>)> = vec![];
+    let mut test_data: Vec<([u8; 16], [u8; 16])> = vec![];
+    let mut rng = rand::thread_rng();
     for _i in 0..iterations {
-        let key = vec![
-            rand::random::<u8>(),
-            rand::random::<u8>(),
-            rand::random::<u8>(),
-            rand::random::<u8>(),
-        ];
-        let value = vec![
-            rand::random::<u8>(),
-            rand::random::<u8>(),
-            rand::random::<u8>(),
-            rand::random::<u8>(),
-        ];
+        let key: [u8; 16] = rng.gen();
+        let value: [u8; 16] = rng.gen();
         test_data.push((key, value));
     }
 
     for i in 0..iterations {
         let (k, v) = &test_data[i];
-        await!(s.put(k.to_vec(), v.to_vec()))?;
+        trace!("issuing PUT");
+        s.put(k.to_vec(), v.to_vec()).await.unwrap();
     }
 
     for i in 0..iterations {
         let (k, v) = &test_data[i];
-        assert_eq!(&await!(s.get(k.to_vec()))?, v);
+        trace!("issuing GET");
+        assert_eq!(&s.get(k.to_vec()).await.unwrap(), v);
     }
 
     info!("Test complete!");
-
-    Ok(())
 }
