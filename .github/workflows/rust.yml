@@ -1,9 +1,7 @@
 name: Rust
-
 on: [push]
-
 jobs:
-  build:
+  test:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -11,8 +9,9 @@ jobs:
         rust: [nightly]
 
     steps:
-    - uses: actions/checkout@v1
-    - name: Build
-      run: cargo build --verbose
+    - uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: ${{ matrix.rust }}
+    - uses: actions/checkout@master
     - name: Run tests
       run: cargo test --verbose
