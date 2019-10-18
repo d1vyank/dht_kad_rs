@@ -13,11 +13,11 @@ use std::sync::Arc;
 use std::{error, fmt, io};
 use tarpc::server::{self, Handler};
 
-pub mod buckets;
 mod client;
 pub mod keyutil;
 mod kvstore;
 mod messages;
+pub mod routing_table;
 mod rpc;
 
 /// DHT configuration
@@ -28,7 +28,7 @@ pub struct DHTConfig {
     /// the number of peers to query concurrently
     pub alpha: u16,
     /// a list of peers to connect to at start up, address should be in IPv4/IPv6 format
-    pub bootstrap_peers: Vec<buckets::Peer>,
+    pub bootstrap_peers: Vec<routing_table::Peer>,
     /// identifier for this peer
     pub id: u128,
     /// socket address to listen on
@@ -37,9 +37,9 @@ pub struct DHTConfig {
 
 pub struct DHTService {
     conf: DHTConfig,
-    local: buckets::Peer,
+    local: routing_table::Peer,
     kvstore: Arc<Mutex<kvstore::MemoryStore>>,
-    routing_table: Arc<Mutex<buckets::RoutingTable>>,
+    routing_table: Arc<Mutex<routing_table::RoutingTable>>,
     dht_client: client::DHTClient,
 }
 
@@ -47,13 +47,13 @@ pub struct DHTService {
 impl DHTService {
     /// Returns a new DHT service with the supplied configuration
     pub fn new(c: DHTConfig) -> Self {
-        let local_peer = buckets::Peer {
+        let local_peer = routing_table::Peer {
             address: c.address.to_string(),
             id: c.id,
         };
 
         let kvstore = Arc::new(Mutex::new(kvstore::MemoryStore::new()));
-        let routing_table = Arc::new(Mutex::new(buckets::RoutingTable::new(
+        let routing_table = Arc::new(Mutex::new(routing_table::RoutingTable::new(
             c.k,
             local_peer.clone(),
         )));

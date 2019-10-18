@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use clap::{App, Arg};
-use dht::{self, buckets, keyutil};
+use dht::{self, keyutil, routing_table};
 use log::{info, trace};
 use pretty_env_logger;
 use rand::Rng;
@@ -91,7 +91,7 @@ fn main() {
     }
 
     for (index, a) in addresses.iter().enumerate() {
-        bootstrap_peers.push(buckets::Peer {
+        bootstrap_peers.push(routing_table::Peer {
             id: id_list[index].parse().unwrap(),
             address: a.to_socket_addrs().unwrap().next().unwrap().to_string(),
         })

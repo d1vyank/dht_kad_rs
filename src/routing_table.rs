@@ -10,58 +10,15 @@ pub struct Peer {
     pub address: String,
 }
 
-struct Bucket {
-    index: u32,
-    peers: Vec<Peer>,
-}
-
 pub struct RoutingTable {
     k: usize,
     local: Peer,
     buckets: Vec<Bucket>,
 }
 
-impl Bucket {
-    fn new(index: u32) -> Self {
-        Bucket {
-            index: index,
-            peers: Vec::new(),
-        }
-    }
-
-    fn move_to_front_if_exists(&mut self, p: &Peer) -> bool {
-        let opt = self
-            .peers
-            .iter()
-            .position(|x| x == p)
-            .map(|x| self.peers.remove(x));
-        match opt {
-            Some(peer) => {
-                self.peers.push(peer);
-                true
-            }
-            None => false,
-        }
-    }
-
-    /// split current bucket by placing peers that don't belong in it in the next bucket that is
-    /// returned
-    fn split(&mut self, target: u128) -> Bucket {
-        let i = self.index;
-        let mut out = Bucket::new(i + 1);
-
-        self.peers.retain(|peer| {
-            let peer_cpl = keyutil::common_prefix_length(peer.id, target);
-            if peer_cpl > i {
-                out.peers.push(peer.clone());
-                false
-            } else {
-                true
-            }
-        });
-
-        out
-    }
+struct Bucket {
+    index: u32,
+    peers: Vec<Peer>,
 }
 
 impl RoutingTable {
@@ -167,13 +124,56 @@ pub struct NoCapacityError;
 
 impl fmt::Display for NoCapacityError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "bucket capacity reached")
+        write!(f, "routing table bucket capacity reached")
     }
 }
 
 impl error::Error for NoCapacityError {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         None
+    }
+}
+
+impl Bucket {
+    fn new(index: u32) -> Self {
+        Bucket {
+            index: index,
+            peers: Vec::new(),
+        }
+    }
+
+    fn move_to_front_if_exists(&mut self, p: &Peer) -> bool {
+        let opt = self
+            .peers
+            .iter()
+            .position(|x| x == p)
+            .map(|x| self.peers.remove(x));
+        match opt {
+            Some(peer) => {
+                self.peers.push(peer);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// split current bucket by placing peers that don't belong in it in the next bucket that is
+    /// returned
+    fn split(&mut self, target: u128) -> Bucket {
+        let i = self.index;
+        let mut out = Bucket::new(i + 1);
+
+        self.peers.retain(|peer| {
+            let peer_cpl = keyutil::common_prefix_length(peer.id, target);
+            if peer_cpl > i {
+                out.peers.push(peer.clone());
+                false
+            } else {
+                true
+            }
+        });
+
+        out
     }
 }
 

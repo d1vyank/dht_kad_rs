@@ -1,8 +1,8 @@
-use crate::buckets;
 use crate::keyutil;
 use crate::kvstore;
 use crate::kvstore::KVStore;
 use crate::messages::{msgutil, routing};
+use crate::routing_table;
 use futures::lock::{Mutex, MutexGuard};
 use futures::prelude::*;
 use log::error;
@@ -25,13 +25,13 @@ pub mod dht {
 #[derive(Clone)]
 pub struct DHTServer {
     kvstore: Arc<Mutex<kvstore::MemoryStore>>,
-    routing_table: Arc<Mutex<buckets::RoutingTable>>,
+    routing_table: Arc<Mutex<routing_table::RoutingTable>>,
 }
 
 impl DHTServer {
     pub fn new(
         kvstore: Arc<Mutex<kvstore::MemoryStore>>,
-        routing_table: Arc<Mutex<buckets::RoutingTable>>,
+        routing_table: Arc<Mutex<routing_table::RoutingTable>>,
     ) -> Self {
         DHTServer {
             kvstore: kvstore,
@@ -120,7 +120,10 @@ impl DHTServer {
     }
 }
 
-fn update_routing_table(rt: &mut MutexGuard<buckets::RoutingTable>, peer: &routing::message::Peer) {
+fn update_routing_table(
+    rt: &mut MutexGuard<routing_table::RoutingTable>,
+    peer: &routing::message::Peer,
+) {
     match rt.update(msgutil::msg_peer_to_peer(peer)) {
         Ok(()) => return,
         Err(e) => error!(

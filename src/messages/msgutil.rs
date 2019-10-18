@@ -1,26 +1,26 @@
-use crate::buckets;
-use crate::messages::routing::{self, message};
-use crate::keyutil;
 use super::super::RPCError;
+use crate::keyutil;
+use crate::messages::routing::{self, message};
+use crate::routing_table;
 
-use std::{io, str};
 use protobuf::ProtobufEnumOrUnknown;
+use std::{io, str};
 
-pub fn msg_peer_to_peer(mp: &message::Peer) -> buckets::Peer {
-    buckets::Peer {
+pub fn msg_peer_to_peer(mp: &message::Peer) -> routing_table::Peer {
+    routing_table::Peer {
         id: keyutil::key_from_bytes(&mp.id),
         address: str::from_utf8(&mp.addrs).unwrap().to_string(),
     }
 }
 
-pub fn msg_peer_from_peer(p: &buckets::Peer) -> message::Peer {
+pub fn msg_peer_from_peer(p: &routing_table::Peer) -> message::Peer {
     let mut message_peer = message::Peer::new();
     message_peer.id = keyutil::key_to_bytes(p.id);
     message_peer.addrs = p.address.clone().into_bytes();
     message_peer
 }
 
-pub fn create_find_node_request(target: u128, myself: buckets::Peer) -> routing::Message {
+pub fn create_find_node_request(target: u128, myself: routing_table::Peer) -> routing::Message {
     let mut request = routing::Message::new();
     request.field_type = ProtobufEnumOrUnknown::new(message::MessageType::FIND_NODE);
     request.key = keyutil::key_to_bytes(target);
@@ -28,7 +28,7 @@ pub fn create_find_node_request(target: u128, myself: buckets::Peer) -> routing:
     request
 }
 
-pub fn create_find_value_request(key: u128, myself: buckets::Peer) -> routing::Message {
+pub fn create_find_value_request(key: u128, myself: routing_table::Peer) -> routing::Message {
     let mut request = routing::Message::new();
     request.field_type = ProtobufEnumOrUnknown::new(message::MessageType::FIND_VALUE);
     request.key = keyutil::key_to_bytes(key);
@@ -36,7 +36,11 @@ pub fn create_find_value_request(key: u128, myself: buckets::Peer) -> routing::M
     request
 }
 
-pub fn create_store_request(myself: buckets::Peer, key: u128, value: Vec<u8>) -> routing::Message {
+pub fn create_store_request(
+    myself: routing_table::Peer,
+    key: u128,
+    value: Vec<u8>,
+) -> routing::Message {
     let mut request = routing::Message::new();
     request.field_type = ProtobufEnumOrUnknown::new(message::MessageType::STORE);
     request.key = keyutil::key_to_bytes(key);
@@ -73,11 +77,11 @@ pub fn create_invalid_response() -> routing::Message {
 
 pub fn create_store_response(success: bool) -> routing::Message {
     let mut response = routing::Message::new();
-    response.field_type =  ProtobufEnumOrUnknown::new(routing::message::MessageType::STORE);
+    response.field_type = ProtobufEnumOrUnknown::new(routing::message::MessageType::STORE);
     if success {
-        response.code =  ProtobufEnumOrUnknown::new(routing::message::ErrorCode::OK);
+        response.code = ProtobufEnumOrUnknown::new(routing::message::ErrorCode::OK);
     } else {
-        response.code =  ProtobufEnumOrUnknown::new(routing::message::ErrorCode::INTERNAL_ERROR);
+        response.code = ProtobufEnumOrUnknown::new(routing::message::ErrorCode::INTERNAL_ERROR);
     }
 
     response
@@ -90,7 +94,7 @@ pub fn create_find_value_response(key: Vec<u8>, value: Vec<u8>) -> routing::Mess
     response
 }
 
-pub fn create_find_node_response(peers: Vec<buckets::Peer>) -> routing::Message {
+pub fn create_find_node_response(peers: Vec<routing_table::Peer>) -> routing::Message {
     let mut message = routing::Message::new();
     for p in peers.iter() {
         message.closerPeers.push(msg_peer_from_peer(&p));

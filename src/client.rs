@@ -1,9 +1,9 @@
 use super::RPCError;
-use crate::buckets;
 use crate::keyutil;
 use crate::kvstore;
 use crate::kvstore::KVStore;
 use crate::messages::{msgutil, routing};
+use crate::routing_table;
 use crate::rpc;
 
 use futures::lock::Mutex;
@@ -17,18 +17,18 @@ use tarpc::{client, context};
 // Issues RPCs to other DHT nodes
 pub struct DHTClient {
     alpha: u16,
-    myself: buckets::Peer,
+    myself: routing_table::Peer,
     kvstore: Arc<Mutex<kvstore::MemoryStore>>,
-    routing_table: Arc<Mutex<buckets::RoutingTable>>,
+    routing_table: Arc<Mutex<routing_table::RoutingTable>>,
 }
 
 impl DHTClient {
     /// Returns a DHT client with the given parameters
     pub fn new(
         alpha: u16,
-        myself: buckets::Peer,
+        myself: routing_table::Peer,
         kvstore: Arc<Mutex<kvstore::MemoryStore>>,
-        routing_table: Arc<Mutex<buckets::RoutingTable>>,
+        routing_table: Arc<Mutex<routing_table::RoutingTable>>,
     ) -> Self {
         DHTClient {
             alpha: alpha,
@@ -154,7 +154,7 @@ impl DHTClient {
         })
     }
 
-    async fn nearest_peers(&self, key: u128) -> Vec<buckets::Peer> {
+    async fn nearest_peers(&self, key: u128) -> Vec<routing_table::Peer> {
         self.routing_table.lock().await.k_nearest_peers(key)
     }
 
@@ -172,7 +172,7 @@ impl DHTClient {
 // spawns an asynchronous lookup whose result is sent to the given channel
 fn spawn_query(
     request: routing::Message,
-    peer: buckets::Peer,
+    peer: routing_table::Peer,
     mut tx: mpsc::UnboundedSender<io::Result<routing::Message>>,
 ) {
     let mut tx_error = tx.clone();
@@ -235,7 +235,7 @@ mod tests {
 
         for server in servers.iter() {
             // ignore bucket capacity reached error
-            let _r = rt.update(buckets::Peer {
+            let _r = rt.update(routing_table::Peer {
                 id: keyutil::create_id(),
                 address: server.address.to_string(),
             });
@@ -270,7 +270,7 @@ mod tests {
         let mut servers = run_n_servers(5, &runtime);
 
         for server in servers.iter_mut() {
-            let _e = rt.update(buckets::Peer {
+            let _e = rt.update(routing_table::Peer {
                 id: keyutil::create_id(),
                 address: server.address.to_string(),
             });
@@ -316,8 +316,8 @@ mod tests {
         servers
     }
 
-    fn mock_local_peer() -> buckets::Peer {
-        buckets::Peer {
+    fn mock_local_peer() -> routing_table::Peer {
+        routing_table::Peer {
             address: "0.0.0.0:1234".to_string(),
             id: 123123,
         }
@@ -327,8 +327,8 @@ mod tests {
         Arc::new(Mutex::new(kvstore::MemoryStore::new()))
     }
 
-    fn mock_routing_table() -> Arc<Mutex<buckets::RoutingTable>> {
-        Arc::new(Mutex::new(buckets::RoutingTable::new(
+    fn mock_routing_table() -> Arc<Mutex<routing_table::RoutingTable>> {
+        Arc::new(Mutex::new(routing_table::RoutingTable::new(
             10,
             mock_local_peer(),
         )))
