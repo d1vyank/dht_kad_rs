@@ -6,6 +6,7 @@ use crate::messages::{msgutil, routing};
 use futures::lock::{Mutex, MutexGuard};
 use futures::prelude::*;
 use log::error;
+use std::pin::Pin;
 use std::str;
 use std::sync::Arc;
 use tarpc::context;
@@ -40,20 +41,20 @@ impl DHTServer {
 }
 
 impl dht::Service for DHTServer {
-    type StoreFut = impl Future<Output = routing::Message>;
-    type FindNodeFut = impl Future<Output = routing::Message>;
-    type FindValueFut = impl Future<Output = routing::Message>;
+    type StoreFut = Pin<Box<dyn Future<Output = routing::Message> + Send>>;
+    type FindNodeFut = Pin<Box<dyn Future<Output = routing::Message> + Send>>;
+    type FindValueFut = Pin<Box<dyn Future<Output = routing::Message> + Send>>;
 
     fn store(self, _: context::Context, message: routing::Message) -> Self::StoreFut {
-        self.store_async(message)
+        self.store_async(message).boxed()
     }
 
     fn find_node(self, _: context::Context, message: routing::Message) -> Self::FindNodeFut {
-        self.find_node_async(message)
+        self.find_node_async(message).boxed()
     }
 
     fn find_value(self, _: context::Context, message: routing::Message) -> Self::FindValueFut {
-        self.find_value_async(message)
+        self.find_value_async(message).boxed()
     }
 }
 

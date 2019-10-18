@@ -6,10 +6,10 @@ An implementation of the Kademlia DHT protocol in Rust.
 
 ## Install
 
-NOTE: This library is currently only compatible with the Rust nightly version as it relies on async-await syntax which is not yet stable.
+NOTE: This library is currently only compatible with the Rust beta version as it relies on async-await syntax which is not yet stable.
 ```
 $ cargo --version
-cargo 1.38.0-nightly (e853aa976 2019-08-09)
+cargo 1.39.0-beta (1c6ec66d5 2019-09-30)
 $ cargo build
 ```
 

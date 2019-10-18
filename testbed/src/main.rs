@@ -1,4 +1,3 @@
-#![feature(arbitrary_self_types, async_await, proc_macro_hygiene, vec_remove_item)]
 #![allow(dead_code)]
 
 use clap::{App, Arg};
@@ -9,7 +8,7 @@ use rand::Rng;
 use std::net::ToSocketAddrs;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
-use tokio::timer::Delay;
+use tokio::timer::Interval;
 
 fn main() {
     pretty_env_logger::init_timed();
@@ -131,8 +130,9 @@ async fn run_testbed(s: dht::DHTService, iterations: usize) {
     s.init().await.unwrap();
 
     // wait for bootstrap
-    let when = Instant::now() + Duration::from_millis(5000);
-    Delay::new(when).await;
+    Interval::new(Instant::now(), Duration::from_millis(5000))
+        .next()
+        .await;
 
     let mut test_data: Vec<([u8; 16], [u8; 16])> = vec![];
     let mut rng = rand::thread_rng();

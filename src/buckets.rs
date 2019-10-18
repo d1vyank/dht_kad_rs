@@ -29,8 +29,12 @@ impl Bucket {
         }
     }
 
-    fn move_to_front_if_exists(&mut self, p: Peer) -> bool {
-        let opt = self.peers.remove_item(&p);
+    fn move_to_front_if_exists(&mut self, p: &Peer) -> bool {
+        let opt = self
+            .peers
+            .iter()
+            .position(|x| x == p)
+            .map(|x| self.peers.remove(x));
         match opt {
             Some(peer) => {
                 self.peers.push(peer);
@@ -80,7 +84,7 @@ impl RoutingTable {
             bucket_index = self.buckets.len() - 1
         }
 
-        if self.buckets[bucket_index].move_to_front_if_exists(p.clone()) {
+        if self.buckets[bucket_index].move_to_front_if_exists(&p) {
             return Ok(());
         }
 
@@ -182,7 +186,7 @@ fn test_bucket_move_to_front() {
     let random_index = rand::thread_rng().gen_range(0, 100);
     let random_peer = b1.peers[random_index].clone();
 
-    assert_eq!(b1.move_to_front_if_exists(random_peer.clone()), true);
+    assert_eq!(b1.move_to_front_if_exists(&random_peer), true);
     assert_eq!(b1.peers.last().unwrap(), &random_peer);
 
     let new_peer = Peer {
@@ -190,7 +194,7 @@ fn test_bucket_move_to_front() {
         address: format!("1.2.3.4:1234"),
     };
     let length_before = b1.peers.len();
-    assert_eq!(b1.move_to_front_if_exists(new_peer), false);
+    assert_eq!(b1.move_to_front_if_exists(&new_peer), false);
     assert_eq!(b1.peers.len(), length_before);
 }
 

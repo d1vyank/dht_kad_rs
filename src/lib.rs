@@ -1,12 +1,3 @@
-#![feature(
-    arbitrary_self_types,
-    async_await,
-    async_closure,
-    custom_attribute,
-    proc_macro_hygiene,
-    vec_remove_item,
-    type_alias_impl_trait
-)]
 #![allow(dead_code)]
 
 use crate::kvstore::KVStore;
