@@ -2,7 +2,7 @@ use super::RPCError;
 use crate::keyutil;
 use crate::kvstore;
 use crate::kvstore::KVStore;
-use crate::messages::{msgutil, routing};
+use crate::messages::{routing, util as msgutil};
 use crate::routing_table;
 use crate::rpc;
 
@@ -42,7 +42,7 @@ impl DHTClient {
     /// to the given key
     /// Returns an 'RPCError' if all the stores issued fail
     pub async fn store(&self, key: u128, value: Vec<u8>) -> Result<(), RPCError> {
-        let request = msgutil::create_store_request(self.myself.clone(), key, value);
+        let request = msgutil::create_store_request(&self.myself, key, &value);
         let mut v = Vec::new();
         let mut failures = 0;
         let mut last_error = RPCError {
@@ -80,7 +80,7 @@ impl DHTClient {
         client
             .find_node(
                 context::current(),
-                msgutil::create_find_node_request(target, self.myself.clone()),
+                msgutil::create_find_node_request(target, &self.myself),
             )
             .await
     }
@@ -108,7 +108,7 @@ impl DHTClient {
             // Spawn upto 'alpha' concurrent queries to available candidate peers
             while in_progress < self.alpha && candidates.len() > 0 {
                 let peer = candidates.pop().unwrap();
-                let request = msgutil::create_find_value_request(key.clone(), self.myself.clone());
+                let request = msgutil::create_find_value_request(key, &self.myself);
                 spawn_query(request, peer.clone(), tx.clone());
                 in_progress = in_progress + 1;
                 queried.push(peer.clone());
@@ -138,7 +138,7 @@ impl DHTClient {
                     let mut new_candidates = response
                         .closerPeers
                         .iter()
-                        .map(|p| msgutil::msg_peer_to_peer(p))
+                        .map(|p| msgutil::proto_peer_to_peer(p))
                         .filter(|p| !queried.contains(&p) && !candidates.contains(&p))
                         .collect();
                     candidates.append(&mut new_candidates);
@@ -219,20 +219,27 @@ mod tests {
     use tarpc::server::{self, Handler};
     use tokio::runtime::Runtime;
 
-    use crate::kvstore::KVStore;
+    use crate::mock::*;
     use crate::rpc::dht::Service;
 
     #[test]
     fn test_store() {
+        // scale
+        let n = 15;
+
+        // mock data and structures
         let key = 123;
         let value = vec![1, 2, 3];
-        let routing_table = mock_routing_table();
-        let mut rt = executor::block_on(routing_table.lock());
-        let runtime = Runtime::new().unwrap();
+        let me = mock_local_peer("0.0.0.0:1234", 1234);
+        let routing_table = mock_routing_table(&me, n);
+        let dht_client = DHTClient::new(5, me, mock_kv_store(), routing_table.clone());
+
         let client_runtime = Runtime::new().unwrap();
+        let server_runtime = Runtime::new().unwrap();
 
-        let servers = run_n_servers(5, &runtime);
-
+        // run n servers and add them to our routing table
+        let servers = run_n_servers(n, &server_runtime);
+        let mut rt = executor::block_on(routing_table.lock());
         for server in servers.iter() {
             // ignore bucket capacity reached error
             let _r = rt.update(routing_table::Peer {
@@ -240,48 +247,46 @@ mod tests {
                 address: server.address.to_string(),
             });
         }
-
         drop(rt);
 
         client_runtime.block_on(async {
-            let key = 123;
-            let value = vec![1, 2, 3];
-            let dht_client = DHTClient::new(5, mock_local_peer(), mock_kv_store(), routing_table);
-
             dht_client.store(key, value.clone()).await.unwrap();
         });
 
         // Assert each server received correct request
         for server in servers.iter() {
             let req = server.last_request.lock().unwrap();
-            assert_eq!(req.key, keyutil::key_to_bytes(key));
+            assert_eq!(req.key, keyutil::key_to_bytes(key), "");
             assert_eq!(req.value, value);
         }
     }
 
     #[test]
     fn test_retrieve() {
+        // scale
+        let n = 15;
+
+        // mock data and structures
+        let me = mock_local_peer("0.0.0.0:1234", 1234);
+        let routing_table = mock_routing_table(&me, 10);
+        let dht_client = DHTClient::new(5, me, mock_kv_store(), routing_table.clone());
         let key = 123;
-        let routing_table = mock_routing_table();
-        let mut rt = executor::block_on(routing_table.lock());
-        let runtime = Runtime::new().unwrap();
+
         let client_runtime = Runtime::new().unwrap();
+        let server_runtime = Runtime::new().unwrap();
 
-        let mut servers = run_n_servers(5, &runtime);
-
+        // create n servers and add them to our routing table
+        let mut servers = run_n_servers(n, &server_runtime);
+        let mut rt = executor::block_on(routing_table.lock());
         for server in servers.iter_mut() {
             let _e = rt.update(routing_table::Peer {
                 id: keyutil::create_id(),
                 address: server.address.to_string(),
             });
         }
-
         drop(rt);
 
         client_runtime.block_on(async {
-            let key = 123;
-            let dht_client = DHTClient::new(5, mock_local_peer(), mock_kv_store(), routing_table);
-
             dht_client.find_value(key).await.unwrap();
         });
 
@@ -296,7 +301,7 @@ mod tests {
         assert!(count >= 1);
     }
 
-    fn run_n_servers(n: u16, rt: &Runtime) -> Vec<MockDHTServer> {
+    fn run_n_servers(n: usize, rt: &Runtime) -> Vec<MockDHTServer> {
         let mut servers = vec![];
 
         for _i in 0..n {
@@ -305,7 +310,7 @@ mod tests {
             let mock_server = MockDHTServer::new(transport.local_addr().to_string());
             servers.push(mock_server.clone());
 
-            trace!("running a server at {:?}", mock_server.address);
+            trace!("running a mock server at {:?}", mock_server.address);
             let server = server::new(server::Config::default())
                 .incoming(transport.filter_map(|r| future::ready(r.ok())))
                 .respond_with(mock_server.serve());
@@ -314,24 +319,6 @@ mod tests {
         }
 
         servers
-    }
-
-    fn mock_local_peer() -> routing_table::Peer {
-        routing_table::Peer {
-            address: "0.0.0.0:1234".to_string(),
-            id: 123123,
-        }
-    }
-
-    fn mock_kv_store() -> Arc<Mutex<kvstore::MemoryStore>> {
-        Arc::new(Mutex::new(kvstore::MemoryStore::new()))
-    }
-
-    fn mock_routing_table() -> Arc<Mutex<routing_table::RoutingTable>> {
-        Arc::new(Mutex::new(routing_table::RoutingTable::new(
-            10,
-            mock_local_peer(),
-        )))
     }
 
     #[derive(Clone)]

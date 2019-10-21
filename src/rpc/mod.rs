@@ -1,11 +1,11 @@
 use crate::keyutil;
 use crate::kvstore;
 use crate::kvstore::KVStore;
-use crate::messages::{msgutil, routing};
-use crate::routing_table;
+use crate::messages::{routing, util as msgutil};
+use crate::routing_table as rt;
 use futures::lock::{Mutex, MutexGuard};
 use futures::prelude::*;
-use log::error;
+use log::{error, trace};
 use std::pin::Pin;
 use std::str;
 use std::sync::Arc;
@@ -25,13 +25,13 @@ pub mod dht {
 #[derive(Clone)]
 pub struct DHTServer {
     kvstore: Arc<Mutex<kvstore::MemoryStore>>,
-    routing_table: Arc<Mutex<routing_table::RoutingTable>>,
+    routing_table: Arc<Mutex<rt::RoutingTable>>,
 }
 
 impl DHTServer {
     pub fn new(
         kvstore: Arc<Mutex<kvstore::MemoryStore>>,
-        routing_table: Arc<Mutex<routing_table::RoutingTable>>,
+        routing_table: Arc<Mutex<rt::RoutingTable>>,
     ) -> Self {
         DHTServer {
             kvstore: kvstore,
@@ -87,7 +87,7 @@ impl DHTServer {
         let mut routing_table = self.routing_table.lock().await;
         update_routing_table(&mut routing_table, &message.myself.unwrap());
         msgutil::create_find_node_response(
-            routing_table.k_nearest_peers(keyutil::key_from_bytes(&message.key)),
+            &routing_table.k_nearest_peers(keyutil::key_from_bytes(&message.key)),
         )
     }
 
@@ -102,13 +102,11 @@ impl DHTServer {
         );
 
         match self.kvstore.lock().await.get(message.key.clone()) {
-            Ok(value) => {
-                if value.is_some() {
-                    return msgutil::create_find_value_response(
-                        message.key,
-                        value.unwrap().to_vec(),
-                    );
-                }
+            Ok(Some(value)) => {
+                return msgutil::create_find_value_response(message.key, value.to_vec());
+            }
+            Ok(None) => {
+                trace!("value not found for find request");
             }
             Err(e) => {
                 error!("Could not read from kv store {:}", e);
@@ -120,11 +118,8 @@ impl DHTServer {
     }
 }
 
-fn update_routing_table(
-    rt: &mut MutexGuard<routing_table::RoutingTable>,
-    peer: &routing::message::Peer,
-) {
-    match rt.update(msgutil::msg_peer_to_peer(peer)) {
+fn update_routing_table(table: &mut MutexGuard<rt::RoutingTable>, peer: &routing::message::Peer) {
+    match table.update(msgutil::proto_peer_to_peer(peer)) {
         Ok(()) => return,
         Err(e) => error!(
             "Could not store peer: {:} error: {:}",

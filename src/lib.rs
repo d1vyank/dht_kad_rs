@@ -17,6 +17,7 @@ mod client;
 pub mod keyutil;
 mod kvstore;
 mod messages;
+mod mock;
 pub mod routing_table;
 mod rpc;
 
