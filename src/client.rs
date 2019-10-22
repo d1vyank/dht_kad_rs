@@ -119,7 +119,7 @@ impl DHTClient {
                 Some(result) => {
                     in_progress = in_progress - 1;
                     if result.is_err() {
-                        info!("failed to query peer {:?}", result.err().unwrap());
+                        info!("failed to query peer {:?}", result.err());
                         break;
                     }
 
@@ -175,22 +175,13 @@ fn spawn_query(
     peer: routing_table::Peer,
     mut tx: mpsc::UnboundedSender<io::Result<routing::Message>>,
 ) {
-    let mut tx_error = tx.clone();
     tokio::spawn(async move {
-        match find_value(peer.address.parse().unwrap(), request.clone()).await {
-            Ok(response) => {
-                match tx.unbounded_send(Ok(response)) {
-                    Err(_e) => (), // Sends fail when reciever is out of scope i.e. the caller has returned. Okay to ignore.
-                    Ok(()) => tx.disconnect(),
-                }
-            }
-            Err(err) => {
-                match tx_error.unbounded_send(Err(err)) {
-                    Err(_e) => (), // Sends fail when reciever is out of scope i.e. the caller has returned. Okay to ignore.
-                    Ok(()) => tx_error.disconnect(),
-                }
-            }
-        }
+        let result = find_value(peer.address.parse().unwrap(), request.clone()).await;
+        // Send query result to caller
+        match tx.unbounded_send(result) {
+            Err(_e) => (), // Sends fail when reciever is out of scope i.e. the caller has returned. Okay to ignore.
+            Ok(()) => tx.disconnect(),
+        };
     });
 }
 
@@ -219,7 +210,7 @@ mod tests {
     use tarpc::server::{self, Handler};
     use tokio::runtime::Runtime;
 
-    use crate::mock::*;
+    use crate::mock;
     use crate::rpc::dht::Service;
 
     #[test]
@@ -230,9 +221,9 @@ mod tests {
         // mock data and structures
         let key = 123;
         let value = vec![1, 2, 3];
-        let me = mock_local_peer("0.0.0.0:1234", 1234);
-        let routing_table = mock_routing_table(&me, n);
-        let dht_client = DHTClient::new(5, me, mock_kv_store(), routing_table.clone());
+        let me = mock::peer("0.0.0.0:1234", 1234);
+        let routing_table = mock::routing_table(&me, n);
+        let dht_client = DHTClient::new(5, me, mock::kv_store(), routing_table.clone());
 
         let client_runtime = Runtime::new().unwrap();
         let server_runtime = Runtime::new().unwrap();
@@ -249,9 +240,9 @@ mod tests {
         }
         drop(rt);
 
-        client_runtime.block_on(async {
-            dht_client.store(key, value.clone()).await.unwrap();
-        });
+        client_runtime
+            .block_on(dht_client.store(key, value.clone()))
+            .unwrap();
 
         // Assert each server received correct request
         for server in servers.iter() {
@@ -267,9 +258,9 @@ mod tests {
         let n = 15;
 
         // mock data and structures
-        let me = mock_local_peer("0.0.0.0:1234", 1234);
-        let routing_table = mock_routing_table(&me, 10);
-        let dht_client = DHTClient::new(5, me, mock_kv_store(), routing_table.clone());
+        let me = mock::peer("0.0.0.0:1234", 1234);
+        let routing_table = mock::routing_table(&me, 10);
+        let dht_client = DHTClient::new(5, me, mock::kv_store(), routing_table.clone());
         let key = 123;
 
         let client_runtime = Runtime::new().unwrap();
@@ -286,10 +277,7 @@ mod tests {
         }
         drop(rt);
 
-        client_runtime.block_on(async {
-            dht_client.find_value(key).await.unwrap();
-        });
-
+        client_runtime.block_on(dht_client.find_value(key)).unwrap();
         // Assert any server received correct request
         let mut count = 0;
         for server in servers.iter() {
