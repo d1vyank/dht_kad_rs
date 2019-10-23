@@ -10,8 +10,10 @@ use futures::prelude::*;
 use log::{error, info, warn};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use std::{error, fmt, io};
 use tarpc::server::{self, Handler};
+use tokio::timer::Interval;
 
 mod client;
 pub mod keyutil;
@@ -118,7 +120,8 @@ impl DHTService {
         let peers = self.conf.bootstrap_peers.clone();
         // TODO: implement Kademlia refresh during bootstrap
         if self.conf.bootstrap_peers.len() == 0 {
-            warn!("No bootstrap peers provided. Waiting for incoming connections.");
+            warn!("No bootstrap peers provided. Blocking initialization until incoming connection");
+            self.wait_for_connection().await;
         }
 
         let mut introductions = vec![];
@@ -134,7 +137,10 @@ impl DHTService {
             match result {
                 Ok(_resp) => { /* TODO: ping and add peers from response to routing table*/ }
                 Err(err) => {
-                    warn!("Failed to reach peer {:}: {:}", peers[i].address, err);
+                    warn!(
+                        "Failed to reach bootstrap peer {:}: {:}",
+                        peers[i].address, err
+                    );
                     continue;
                 }
             }
@@ -144,6 +150,20 @@ impl DHTService {
             }
         }
         Ok(())
+    }
+
+    async fn wait_for_connection(&self) {
+        loop {
+            Interval::new(Instant::now(), Duration::from_millis(1000))
+                .next()
+                .await;
+            let rt = self.routing_table.lock().await;
+            if rt.nearest_peers(self.conf.id, 2).len() >= 1 {
+                info!("Incoming connection detected, proceeding.");
+                break;
+            }
+            drop(rt);
+        }
     }
 }
 
