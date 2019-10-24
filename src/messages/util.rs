@@ -36,6 +36,13 @@ pub fn create_find_value_request(key: u128, myself: &routing_table::Peer) -> rou
     request
 }
 
+pub fn create_ping_request(myself: &routing_table::Peer) -> routing::Message {
+    let mut request = routing::Message::new();
+    request.field_type = ProtobufEnumOrUnknown::new(message::MessageType::PING);
+    request.myself = ::protobuf::SingularPtrField::some(proto_peer_from_peer(&myself));
+    request
+}
+
 pub fn create_store_request(
     myself: &routing_table::Peer,
     key: u128,
@@ -102,6 +109,10 @@ pub fn create_find_node_response(peers: &Vec<routing_table::Peer>) -> routing::M
     message
 }
 
+pub fn create_ping_response() -> routing::Message {
+    routing::Message::new()
+}
+
 pub fn validate_request(msg: &routing::Message) -> bool {
     if msg.myself.is_none() {
         return false;
@@ -113,9 +124,6 @@ pub fn validate_request(msg: &routing::Message) -> bool {
         return false;
     }
     if str::from_utf8(msg.myself.get_ref().addrs.as_slice()).is_err() {
-        return false;
-    }
-    if msg.key.len() == 0 {
         return false;
     }
 

@@ -19,6 +19,7 @@ pub mod dht {
         async fn store(message: routing::Message) -> routing::Message;
         async fn find_node(message: routing::Message) -> routing::Message;
         async fn find_value(message: routing::Message) -> routing::Message;
+        async fn ping(message: routing::Message) -> routing::Message;
     }
 }
 
@@ -44,6 +45,7 @@ impl dht::Service for DHTServer {
     type StoreFut = Pin<Box<dyn Future<Output = routing::Message> + Send>>;
     type FindNodeFut = Pin<Box<dyn Future<Output = routing::Message> + Send>>;
     type FindValueFut = Pin<Box<dyn Future<Output = routing::Message> + Send>>;
+    type PingFut = Pin<Box<dyn Future<Output = routing::Message> + Send>>;
 
     fn store(self, _: context::Context, message: routing::Message) -> Self::StoreFut {
         self.store_async(message).boxed()
@@ -55,6 +57,10 @@ impl dht::Service for DHTServer {
 
     fn find_value(self, _: context::Context, message: routing::Message) -> Self::FindValueFut {
         self.find_value_async(message).boxed()
+    }
+
+    fn ping(self, _: context::Context, message: routing::Message) -> Self::PingFut {
+        self.ping_async(message).boxed()
     }
 }
 
@@ -114,6 +120,19 @@ impl DHTServer {
 
         // If value not found or error, compute and return 'find node' response
         self.find_node_async(message).await
+    }
+
+    async fn ping_async(self, message: routing::Message) -> routing::Message {
+        if !msgutil::validate_request(&message) {
+            return msgutil::create_invalid_response();
+        }
+
+        update_routing_table(
+            &mut self.routing_table.lock().await,
+            &message.clone().myself.unwrap(),
+        );
+
+        msgutil::create_ping_response()
     }
 }
 
@@ -224,5 +243,21 @@ mod tests {
         let resp = executor::block_on(dht_server.find_value_async(req));
         assert!(resp.code.enum_value_or_default() == routing::message::ErrorCode::OK);
         assert_eq!(resp.value, value);
+    }
+
+    #[test]
+    fn ping() {
+        let me = mock::peer("0.0.0.0:1234", 1234);
+        let (kv_store, table) = (mock::kv_store(), mock::routing_table(&me, 10));
+
+        let dht_server = DHTServer::new(kv_store.clone(), table.clone());
+        let req = msgutil::create_ping_request(&me);
+        let resp = executor::block_on(dht_server.ping_async(req));
+
+        // assert ping was successful
+        assert_eq!(
+            resp.code.enum_value_or_default(),
+            routing::message::ErrorCode::OK
+        );
     }
 }

@@ -120,7 +120,7 @@ impl DHTClient {
                     in_progress = in_progress - 1;
                     if result.is_err() {
                         info!("failed to query peer {:?}", result.err());
-                        break;
+                        continue;
                     }
 
                     let response = result.ok().unwrap();
@@ -152,6 +152,18 @@ impl DHTClient {
             error_code: routing::message::ErrorCode::NOT_FOUND,
             message: "value not found".to_string(),
         })
+    }
+
+    /// Issues a 'ping' RPC to the given address
+    pub async fn ping(&self, addr: SocketAddr) -> io::Result<routing::Message> {
+        let conn = tarpc_bincode_transport::connect(&addr).await?;
+        let mut client = rpc::dht::ServiceClient::new(client::Config::default(), conn).spawn()?;
+        client
+            .ping(
+                context::current(),
+                msgutil::create_ping_request(&self.myself),
+            )
+            .await
     }
 
     async fn nearest_peers(&self, key: u128) -> Vec<routing_table::Peer> {
@@ -330,6 +342,7 @@ mod tests {
         type StoreFut = Ready<routing::Message>;
         type FindNodeFut = Ready<routing::Message>;
         type FindValueFut = Ready<routing::Message>;
+        type PingFut = Ready<routing::Message>;
 
         fn store(self, _: context::Context, message: routing::Message) -> Self::StoreFut {
             let mut last_req = self.last_request.lock().unwrap();
@@ -348,6 +361,10 @@ mod tests {
                 message.key.clone(),
                 self.retrieve_result.clone(),
             ))
+        }
+
+        fn ping(self, _: context::Context, _message: routing::Message) -> Self::PingFut {
+            future::ready(routing::Message::new())
         }
     }
 }

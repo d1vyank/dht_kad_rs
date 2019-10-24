@@ -154,5 +154,11 @@ async fn run_testbed(s: dht::DHTService, iterations: usize) {
         assert_eq!(&s.get(k.to_vec()).await.unwrap(), v);
     }
 
+    // seed values for 2 seconds
+    Interval::new(Instant::now(), Duration::from_millis(2000))
+        .next()
+        .await;
+
+    // exit
     info!("Test complete!");
 }

@@ -3,7 +3,8 @@ services:
   bootstrap-dht:
     image: dht_kad_rs:latest
     environment:
-      - RUST_LOG=testbed,dht=info
+      # - RUST_LOG=trace;
+      - RUST_LOG=testbed,dht=trace
       # - RUST_LOG=tarpc=trace
       # - RUST_BACKTRACE=1
       # - RUST_BACKTRACE=full
@@ -16,8 +17,9 @@ services:
   dht:
     image: dht_kad_rs:latest
     environment:
-      - RUST_LOG=testbed,dht=info
-      #- RUST_LOG=tarpc=trace
+      # - RUST_LOG=trace;
+      - RUST_LOG=testbed,dht=trace
+      # - RUST_LOG=tarpc=trace
       #- RUST_BACKTRACE=1
       #- RUST_BACKTRACE=full
     depends_on:
