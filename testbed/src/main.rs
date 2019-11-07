@@ -6,9 +6,10 @@ use log::{info, trace};
 use pretty_env_logger;
 use rand::Rng;
 use std::net::ToSocketAddrs;
+use std::ops::Add;
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
-use tokio::timer::Interval;
+use tokio::timer;
 
 fn main() {
     pretty_env_logger::init_timed();
@@ -129,10 +130,9 @@ async fn run_testbed(s: dht::DHTService, iterations: usize) {
     trace!("initializing DHT");
     s.init().await.unwrap();
 
-    // wait for bootstrap
-    Interval::new(Instant::now(), Duration::from_millis(5000))
-        .next()
-        .await;
+    info!("Bootstrap complete");
+    // // wait for bootstrap
+    // timer::delay(Instant::now().add(Duration::from_millis(2000))).await;
 
     let mut test_data: Vec<([u8; 16], [u8; 16])> = vec![];
     let mut rng = rand::thread_rng();
@@ -155,9 +155,7 @@ async fn run_testbed(s: dht::DHTService, iterations: usize) {
     }
 
     // seed values for 2 seconds
-    Interval::new(Instant::now(), Duration::from_millis(2000))
-        .next()
-        .await;
+    timer::delay(Instant::now().add(Duration::from_millis(2000))).await;
 
     // exit
     info!("Test complete!");

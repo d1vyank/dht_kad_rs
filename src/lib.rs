@@ -2,6 +2,8 @@
 
 use crate::kvstore::KVStore;
 use crate::messages::routing;
+use crate::messages::util as msgutil;
+use crate::routing_table as rt;
 use crate::rpc::dht::Service;
 
 use futures::future::join_all;
@@ -117,7 +119,7 @@ impl DHTService {
     }
 
     async fn bootstrap(&self) -> io::Result<()> {
-        let peers = self.conf.bootstrap_peers.clone();
+        let bootstrap_peers = self.conf.bootstrap_peers.clone();
         // TODO: implement Kademlia refresh during bootstrap
         if self.conf.bootstrap_peers.len() == 0 {
             warn!("No bootstrap peers provided. Blocking initialization until incoming connection");
@@ -125,27 +127,71 @@ impl DHTService {
         }
 
         let mut introductions = vec![];
-        for peer in peers.clone() {
+        let mut candidate_peers = vec![];
+        let mut alive_peers = vec![];
+        for peer in bootstrap_peers.clone() {
             let address = peer.address.parse().unwrap();
             introductions.push(self.dht_client.find_node(address, self.local.id));
         }
 
+        // TODO optimize... join all waits for all futures to complete
         let results = join_all(introductions).await;
-        let mut rt = self.routing_table.lock().await;
 
         for (i, result) in results.iter().enumerate() {
             match result {
-                Ok(_resp) => { /* TODO: ping and add peers from response to routing table*/ }
+                Ok(resp) => {
+                    for p in resp.closerPeers.iter() {
+                        candidate_peers.push(msgutil::proto_peer_to_peer(&p));
+                    }
+                    alive_peers.push(bootstrap_peers[i].clone());
+                }
                 Err(err) => {
                     warn!(
                         "Failed to reach bootstrap peer {:}: {:}",
-                        peers[i].address, err
+                        bootstrap_peers[i].address, err
                     );
                     continue;
                 }
             }
-            match rt.update(peers[i].clone()) {
-                Ok(()) => info!("Added peer {:} to routing table", peers[i].address),
+        }
+        // remove any duplicate candidates and ones we've already visited
+        // TODO: struct.Vec#method.drain_filter may be useful here, once stabilized
+        let mut candidate_peers: Vec<rt::Peer> = candidate_peers
+            .iter()
+            .filter(|p| !bootstrap_peers.contains(p))
+            .cloned()
+            .collect();
+        candidate_peers.sort_by_key(|p| p.id);
+        candidate_peers.dedup();
+
+        // Ping candidates
+        let mut introductions = vec![];
+        for peer in candidate_peers.iter() {
+            let address = peer.address.parse().unwrap();
+            introductions.push(self.dht_client.ping(address));
+        }
+        let results = join_all(introductions).await;
+
+        for (i, result) in results.iter().enumerate() {
+            match result {
+                Ok(_resp) => {
+                    alive_peers.push(candidate_peers[i].clone());
+                }
+                Err(err) => {
+                    warn!(
+                        "Failed to ping candidate peer {:}: {:}",
+                        candidate_peers[i].address, err
+                    );
+                    continue;
+                }
+            }
+        }
+
+        let mut rt = self.routing_table.lock().await;
+
+        for peer in alive_peers.iter() {
+            match rt.update(peer.clone()) {
+                Ok(()) => info!("Added peer {:} to routing table", peer.address),
                 Err(e) => error!("Could not add peer to routing table: {:}", e),
             }
         }

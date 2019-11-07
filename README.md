@@ -11,6 +11,9 @@ NOTE: This library is currently only compatible with the Rust beta version as it
 $ cargo --version
 cargo 1.39.0-beta (1c6ec66d5 2019-09-30)
 $ cargo build
+
+# To run a 10 node testbed (with Docker (v18.09.2 or higher) installed)
+$ make run-tested
 ```
 
 ## Usage

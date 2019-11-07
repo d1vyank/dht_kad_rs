@@ -4,7 +4,7 @@ services:
     image: dht_kad_rs:latest
     environment:
       # - RUST_LOG=trace;
-      - RUST_LOG=testbed,dht=trace
+      - RUST_LOG=testbed,dht=warn
       # - RUST_LOG=tarpc=trace
       # - RUST_BACKTRACE=1
       # - RUST_BACKTRACE=full
@@ -18,7 +18,7 @@ services:
     image: dht_kad_rs:latest
     environment:
       # - RUST_LOG=trace;
-      - RUST_LOG=testbed,dht=trace
+      - RUST_LOG=testbed,dht=warn
       # - RUST_LOG=tarpc=trace
       #- RUST_BACKTRACE=1
       #- RUST_BACKTRACE=full

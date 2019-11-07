@@ -7,6 +7,7 @@ use crate::keyutil;
 #[derive(Debug, PartialEq, Clone)]
 pub struct Peer {
     pub id: u128,
+    // TODO: Keep address in SocketAddr format?
     pub address: String,
 }
 
